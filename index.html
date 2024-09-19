@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enhanced Prototype 3D Drone Website</title>
+    <title>
+      Enhanced 3D Drone Website with Aerial Movement & Lab Playground
+    </title>
     <style>
       body {
         margin: 0;
@@ -30,25 +32,71 @@
         padding: 10px;
         z-index: 100;
       }
-      #content {
+      #tooltip {
+        position: absolute;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        display: none;
+        z-index: 200;
+      }
+      #labInterface {
         position: absolute;
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.7);
+        background: rgba(0, 0, 0, 0.8);
         color: white;
         padding: 20px;
         border-radius: 10px;
-        max-width: 300px;
-        opacity: 0;
-        transition: opacity 0.5s ease;
+        display: none;
+        z-index: 300;
+        width: 80%;
+        max-width: 600px;
+      }
+      #terminal {
+        background: black;
+        color: white;
+        font-family: monospace;
+        padding: 10px;
+        margin-top: 10px;
+        height: 200px;
+        overflow-y: auto;
+      }
+      #commandInput {
+        width: 100%;
+        margin-top: 10px;
+      }
+      .lab-button {
+        position: absolute;
+        background: #4caf50;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        display: none;
+        z-index: 150;
       }
     </style>
   </head>
   <body>
-    <div id="info">Use WASD to move, mouse to look around. Click to start.</div>
+    <div id="info">
+      Use WASD to move, Q/E to ascend/descend, mouse to look around. Click to
+      start.
+    </div>
     <div id="pointerList"></div>
-    <div id="content"></div>
+    <div id="tooltip"></div>
+    <div id="labInterface">
+      <h2 id="labTitle"></h2>
+      <p id="labDescription"></p>
+      <div id="terminal"></div>
+      <input type="text" id="commandInput" placeholder="Enter command..." />
+      <button onclick="submitCommand()">Submit</button>
+      <button onclick="closeLab()">Close Lab</button>
+    </div>
+    <button id="startLab" class="lab-button">Start Lab</button>
     <script type="importmap">
       {
         "imports": {
@@ -66,12 +114,16 @@
       let moveForward = false,
         moveBackward = false,
         moveLeft = false,
-        moveRight = false;
+        moveRight = false,
+        moveUp = false,
+        moveDown = false;
       let prevTime = performance.now();
       const velocity = new THREE.Vector3();
       const direction = new THREE.Vector3();
       let pointers = [];
       let buildings = [];
+      let labPointers = [];
+      let currentLab = null;
 
       init();
       animate();
@@ -84,13 +136,12 @@
           0.1,
           1000
         );
-        camera.position.y = 2;
+        camera.position.y = 50; // Start higher up for a drone-like view
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // Add basic lighting
         const ambientLight = new THREE.AmbientLight(0x404040);
         scene.add(ambientLight);
 
@@ -98,14 +149,12 @@
         directionalLight.position.set(1, 1, 1);
         scene.add(directionalLight);
 
-        // Add a simple ground
         const groundGeometry = new THREE.PlaneGeometry(200, 200);
         const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x999999 });
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         ground.rotation.x = -Math.PI / 2;
         scene.add(ground);
 
-        // Add more buildings
         for (let i = 0; i < 50; i++) {
           const buildingGeometry = new THREE.BoxGeometry(
             2,
@@ -125,8 +174,7 @@
           buildings.push(building);
         }
 
-        // Add pointers
-        const dummyTexts = [
+        const contentTexts = [
           "Welcome to the future of drone technology!",
           "Explore the city from a bird's eye view.",
           "Discover hidden gems in the urban landscape.",
@@ -149,22 +197,64 @@
               0.5,
             randomBuilding.position.z
           );
-          pointer.userData.content = dummyTexts[i];
+          pointer.userData.content = contentTexts[i];
           scene.add(pointer);
           pointers.push(pointer);
         }
 
-        // Set up pointer list UI
-        const pointerListElement = document.getElementById("pointerList");
-        pointers.forEach((pointer, index) => {
-          const listItem = document.createElement("div");
-          listItem.textContent = `Pointer ${index + 1}`;
-          listItem.style.cursor = "pointer";
-          listItem.onclick = () => moveToPointer(pointer);
-          pointerListElement.appendChild(listItem);
-        });
+        const labExperiments = [
+          {
+            title: "Drone Flight Basics",
+            description: "Learn the fundamentals of drone flight controls.",
+            tasks: [
+              {
+                command: "takeoff",
+                response: "Drone has taken off successfully.",
+              },
+              { command: "hover", response: "Drone is now hovering in place." },
+              { command: "land", response: "Drone has landed safely." },
+            ],
+          },
+          {
+            title: "Advanced Maneuvers",
+            description: "Master complex drone maneuvers and formations.",
+            tasks: [
+              { command: "flip", response: "Drone performed a flip maneuver." },
+              {
+                command: "spiral",
+                response: "Drone executed a spiral flight pattern.",
+              },
+              {
+                command: "formation alpha",
+                response: "Drones formed Alpha formation.",
+              },
+            ],
+          },
+        ];
 
-        // Set up controls
+        for (let i = 0; i < labExperiments.length; i++) {
+          const labPointerGeometry = new THREE.SphereGeometry(0.2, 32, 32);
+          const labPointerMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+          });
+          const labPointer = new THREE.Mesh(
+            labPointerGeometry,
+            labPointerMaterial
+          );
+          const randomBuilding =
+            buildings[Math.floor(Math.random() * buildings.length)];
+          labPointer.position.set(
+            randomBuilding.position.x,
+            randomBuilding.position.y +
+              randomBuilding.geometry.parameters.height / 2 +
+              0.5,
+            randomBuilding.position.z
+          );
+          labPointer.userData.experiment = labExperiments[i];
+          scene.add(labPointer);
+          labPointers.push(labPointer);
+        }
+
         controls = new PointerLockControls(camera, document.body);
         scene.add(controls.getObject());
 
@@ -176,6 +266,9 @@
         document.addEventListener("keyup", onKeyUp);
 
         window.addEventListener("resize", onWindowResize);
+
+        const startLabButton = document.getElementById("startLab");
+        startLabButton.addEventListener("click", startLabExperiment);
       }
 
       function onKeyDown(event) {
@@ -191,6 +284,12 @@
             break;
           case "KeyD":
             moveRight = true;
+            break;
+          case "KeyQ":
+            moveUp = true;
+            break;
+          case "KeyE":
+            moveDown = true;
             break;
         }
       }
@@ -209,6 +308,12 @@
           case "KeyD":
             moveRight = false;
             break;
+          case "KeyQ":
+            moveUp = false;
+            break;
+          case "KeyE":
+            moveDown = false;
+            break;
         }
       }
 
@@ -218,31 +323,53 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
       }
 
-      function moveToPointer(pointer) {
-        controls.unlock();
-        gsap.to(controls.getObject().position, {
-          x: pointer.position.x,
-          y: pointer.position.y + 2,
-          z: pointer.position.z,
-          duration: 2,
-          onUpdate: function () {
-            camera.lookAt(pointer.position);
-          },
-          onComplete: function () {
-            controls.lock();
-          },
-        });
+      function showTooltip(content, x, y) {
+        const tooltip = document.getElementById("tooltip");
+        tooltip.style.display = "block";
+        tooltip.style.left = x + "px";
+        tooltip.style.top = y + "px";
+        tooltip.textContent = content;
       }
 
-      function showContent(pointer) {
-        const contentElement = document.getElementById("content");
-        contentElement.textContent = pointer.userData.content;
-        gsap.to(contentElement, { opacity: 1, duration: 0.5 });
+      function hideTooltip() {
+        const tooltip = document.getElementById("tooltip");
+        tooltip.style.display = "none";
       }
 
-      function hideContent() {
-        const contentElement = document.getElementById("content");
-        gsap.to(contentElement, { opacity: 0, duration: 0.5 });
+      function startLabExperiment() {
+        if (currentLab) {
+          const labInterface = document.getElementById("labInterface");
+          labInterface.style.display = "block";
+          document.getElementById("labTitle").textContent = currentLab.title;
+          document.getElementById("labDescription").textContent =
+            currentLab.description;
+          document.getElementById("terminal").innerHTML = "";
+          controls.unlock();
+        }
+      }
+
+      function closeLab() {
+        const labInterface = document.getElementById("labInterface");
+        labInterface.style.display = "none";
+        controls.lock();
+      }
+
+      function submitCommand() {
+        const commandInput = document.getElementById("commandInput");
+        const command = commandInput.value.trim().toLowerCase();
+        const terminal = document.getElementById("terminal");
+
+        terminal.innerHTML += `> ${command}<br>`;
+
+        const task = currentLab.tasks.find((t) => t.command === command);
+        if (task) {
+          terminal.innerHTML += `${task.response}<br>`;
+        } else {
+          terminal.innerHTML += "Unknown command. Try again.<br>";
+        }
+
+        commandInput.value = "";
+        terminal.scrollTop = terminal.scrollHeight;
       }
 
       function animate() {
@@ -251,23 +378,39 @@
         const time = performance.now();
         const delta = (time - prevTime) / 1000;
 
-        velocity.x -= velocity.x * 10.0 * delta;
-        velocity.z -= velocity.z * 10.0 * delta;
+        velocity.x -= velocity.x * 5.0 * delta;
+        velocity.y -= velocity.y * 5.0 * delta;
+        velocity.z -= velocity.z * 5.0 * delta;
 
         direction.z = Number(moveForward) - Number(moveBackward);
         direction.x = Number(moveRight) - Number(moveLeft);
+        direction.y = Number(moveUp) - Number(moveDown);
         direction.normalize();
 
+        const moveSpeed = 200.0;
+
         if (moveForward || moveBackward)
-          velocity.z -= direction.z * 400.0 * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
+          velocity.z -= direction.z * moveSpeed * delta;
+        if (moveLeft || moveRight)
+          velocity.x -= direction.x * moveSpeed * delta;
+        if (moveUp || moveDown) velocity.y += direction.y * moveSpeed * delta;
 
         controls.moveRight(-velocity.x * delta);
         controls.moveForward(-velocity.z * delta);
 
-        // Check distance to pointers
+        // Move the camera up/down
+        controls.getObject().position.y += velocity.y * delta;
+
+        // Prevent going below ground level
+        if (controls.getObject().position.y < 1) {
+          velocity.y = 0;
+          controls.getObject().position.y = 1;
+        }
+
         let closestPointer = null;
         let closestDistance = Infinity;
+        let closestLabPointer = null;
+        let closestLabDistance = Infinity;
 
         pointers.forEach((pointer) => {
           const distance = controls
@@ -279,16 +422,49 @@
           }
         });
 
+        labPointers.forEach((labPointer) => {
+          const distance = controls
+            .getObject()
+            .position.distanceTo(labPointer.position);
+          if (distance < closestLabDistance) {
+            closestLabDistance = distance;
+            closestLabPointer = labPointer;
+          }
+        });
+
         if (closestDistance < 5 && closestPointer) {
-          showContent(closestPointer);
+          const screenPosition = closestPointer.position
+            .clone()
+            .project(camera);
+          const x = (screenPosition.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (-(screenPosition.y * 0.5) + 0.5) * window.innerHeight;
+          showTooltip(closestPointer.userData.content, x, y);
+        } else if (closestLabDistance < 5 && closestLabPointer) {
+          const screenPosition = closestLabPointer.position
+            .clone()
+            .project(camera);
+          const x = (screenPosition.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (-(screenPosition.y * 0.5) + 0.5) * window.innerHeight;
+          showTooltip(closestLabPointer.userData.experiment.title, x, y);
+
+          const startLabButton = document.getElementById("startLab");
+          startLabButton.style.display = "block";
+          startLabButton.style.left = x + "px";
+          startLabButton.style.top = y + 30 + "px";
+          currentLab = closestLabPointer.userData.experiment;
         } else {
-          hideContent();
+          hideTooltip();
+          document.getElementById("startLab").style.display = "none";
+          currentLab = null;
         }
 
         prevTime = time;
 
         renderer.render(scene, camera);
       }
+
+      window.submitCommand = submitCommand;
+      window.closeLab = closeLab;
     </script>
   </body>
 </html>
