@@ -4,8 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>
-      Enhanced 3D Drone Website with Aerial Movement & Lab Playground
+      Enhanced 3D Drone Website with Aerial Movement & Linux Terminal Lab
     </title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.css"
+    />
     <style>
       body {
         margin: 0;
@@ -63,9 +67,8 @@
         margin-top: 10px;
         height: 200px;
         overflow-y: auto;
-      }
-      #commandInput {
         width: 100%;
+        height: 300px;
         margin-top: 10px;
       }
       .lab-button {
@@ -78,6 +81,10 @@
         cursor: pointer;
         display: none;
         z-index: 150;
+      }
+      #assignment-info {
+        margin-top: 20px;
+        color: white;
       }
     </style>
   </head>
@@ -92,11 +99,15 @@
       <h2 id="labTitle"></h2>
       <p id="labDescription"></p>
       <div id="terminal"></div>
-      <input type="text" id="commandInput" placeholder="Enter command..." />
-      <button onclick="submitCommand()">Submit</button>
+      <div id="assignment-info">
+        <h3>Current Assignment: <span id="assignment-title"></span></h3>
+        <p id="assignment-description"></p>
+      </div>
+      <button onclick="submitAssignment()">Submit Assignment</button>
       <button onclick="closeLab()">Close Lab</button>
     </div>
     <button id="startLab" class="lab-button">Start Lab</button>
+
     <script type="importmap">
       {
         "imports": {
@@ -106,6 +117,8 @@
       }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.7.1/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/xterm.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/3.14.5/addons/fit/fit.min.js"></script>
     <script type="module">
       import * as THREE from "three";
       import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls";
@@ -124,6 +137,31 @@
       let buildings = [];
       let labPointers = [];
       let currentLab = null;
+      let term;
+      let currentLine = "";
+
+      // Terminal and assignment-related variables
+      let currentAssignment = null;
+      const assignments = [
+        {
+          title: "Hello World",
+          description:
+            "Write a Python program that prints 'Hello, World!' to the console.",
+          startCode: "# Write your code here\n\n",
+          solution: 'print("Hello, World!")',
+          test: (output) => output.trim() === "Hello, World!",
+        },
+        {
+          title: "Sum of Two Numbers",
+          description:
+            "Write a Python function that takes two numbers as input and returns their sum.",
+          startCode:
+            "def sum_two_numbers(a, b):\n    # Write your code here\n    pass\n\n# Test your function\nprint(sum_two_numbers(3, 4))",
+          solution:
+            "def sum_two_numbers(a, b):\n    return a + b\n\nprint(sum_two_numbers(3, 4))",
+          test: (output) => output.trim() === "7",
+        },
+      ];
 
       init();
       animate();
@@ -136,7 +174,7 @@
           0.1,
           1000
         );
-        camera.position.y = 50; // Start higher up for a drone-like view
+        camera.position.y = 50;
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -173,7 +211,6 @@
           scene.add(building);
           buildings.push(building);
         }
-
         const contentTexts = [
           "Welcome to the future of drone technology!",
           "Explore the city from a bird's eye view.",
@@ -181,7 +218,6 @@
           "Experience the thrill of drone flight.",
           "Navigate through the concrete jungle.",
         ];
-
         for (let i = 0; i < 5; i++) {
           const pointerGeometry = new THREE.SphereGeometry(0.2, 32, 32);
           const pointerMaterial = new THREE.MeshBasicMaterial({
@@ -201,34 +237,14 @@
           scene.add(pointer);
           pointers.push(pointer);
         }
-
         const labExperiments = [
           {
-            title: "Drone Flight Basics",
-            description: "Learn the fundamentals of drone flight controls.",
-            tasks: [
-              {
-                command: "takeoff",
-                response: "Drone has taken off successfully.",
-              },
-              { command: "hover", response: "Drone is now hovering in place." },
-              { command: "land", response: "Drone has landed safely." },
-            ],
+            title: "Python Basics Lab",
+            description: "Learn and practice Python programming basics.",
           },
           {
-            title: "Advanced Maneuvers",
-            description: "Master complex drone maneuvers and formations.",
-            tasks: [
-              { command: "flip", response: "Drone performed a flip maneuver." },
-              {
-                command: "spiral",
-                response: "Drone executed a spiral flight pattern.",
-              },
-              {
-                command: "formation alpha",
-                response: "Drones formed Alpha formation.",
-              },
-            ],
+            title: "Advanced Python Lab",
+            description: "Explore advanced Python concepts and algorithms.",
           },
         ];
 
@@ -269,6 +285,17 @@
 
         const startLabButton = document.getElementById("startLab");
         startLabButton.addEventListener("click", startLabExperiment);
+
+        // Initialize xterm.js
+        term = new Terminal({
+          cursorBlink: true,
+          theme: {
+            background: "#000000",
+            foreground: "#ffffff",
+          },
+          rows: 20,
+          cols: 80,
+        });
       }
 
       function onKeyDown(event) {
@@ -322,7 +349,6 @@
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       }
-
       function showTooltip(content, x, y) {
         const tooltip = document.getElementById("tooltip");
         tooltip.style.display = "block";
@@ -330,7 +356,6 @@
         tooltip.style.top = y + "px";
         tooltip.textContent = content;
       }
-
       function hideTooltip() {
         const tooltip = document.getElementById("tooltip");
         tooltip.style.display = "none";
@@ -343,9 +368,113 @@
           document.getElementById("labTitle").textContent = currentLab.title;
           document.getElementById("labDescription").textContent =
             currentLab.description;
-          document.getElementById("terminal").innerHTML = "";
+
           controls.unlock();
+
+          term.open(document.getElementById("terminal"));
+          Terminal.applyAddon(fit);
+          term.fit();
+
+          term.clear();
+          term.writeln("Welcome to the Python Programming Lab");
+          term.writeln('Type "help" for a list of available commands');
+          term.writeln("");
+
+          term.onKey(({ key, domEvent }) => {
+            const printable =
+              !domEvent.altKey && !domEvent.ctrlKey && !domEvent.metaKey;
+
+            if (domEvent.keyCode === 13) {
+              // Enter
+              term.write("\r\n");
+              handleCommand(currentLine);
+              currentLine = "";
+              term.write("$ ");
+            } else if (domEvent.keyCode === 8) {
+              // Backspace
+              if (currentLine.length > 0) {
+                currentLine = currentLine.slice(0, -1);
+                term.write("\b \b");
+              }
+            } else if (printable) {
+              currentLine += key;
+              term.write(key);
+            }
+          });
+
+          term.write("$ ");
+
+          startAssignment();
         }
+      }
+
+      function handleCommand(command) {
+        command = command.trim();
+        switch (command.toLowerCase()) {
+          case "help":
+            term.writeln("Available commands:");
+            term.writeln("  help - Show this help message");
+            term.writeln("  clear - Clear the terminal");
+            term.writeln("  ls - List files in the current directory");
+            term.writeln("  cat [filename] - Display file contents");
+            term.writeln("  python [filename] - Run a Python script");
+            break;
+          case "clear":
+            term.clear();
+            break;
+          case "ls":
+            term.writeln("assignment.py");
+            break;
+          case "cat assignment.py":
+            if (currentAssignment) {
+              term.writeln(currentAssignment.startCode);
+            } else {
+              term.writeln("No active assignment.");
+            }
+            break;
+          case "python assignment.py":
+            if (currentAssignment) {
+              // In a real implementation, this would be executed in a containerized backend
+              const output = eval(currentAssignment.solution);
+              term.writeln(output);
+            } else {
+              term.writeln("No active assignment.");
+            }
+            break;
+          default:
+            term.writeln(`Command not found: ${command}`);
+        }
+      }
+
+      function startAssignment() {
+        currentAssignment =
+          assignments[Math.floor(Math.random() * assignments.length)];
+        document.getElementById("assignment-title").textContent =
+          currentAssignment.title;
+        document.getElementById("assignment-description").textContent =
+          currentAssignment.description;
+        term.writeln(`\r\nNew assignment started: ${currentAssignment.title}`);
+        term.writeln(
+          'Use "cat assignment.py" to view the assignment, and edit it using your preferred method.'
+        );
+        term.writeln('Run your code using "python assignment.py"');
+        term.write("$ ");
+      }
+
+      function submitAssignment() {
+        if (currentAssignment) {
+          // In a real implementation, this would be executed in a containerized backend
+          const output = eval(currentAssignment.solution);
+          const passed = currentAssignment.test(output);
+          if (passed) {
+            term.writeln("\r\nAssignment passed! Great job!");
+          } else {
+            term.writeln("\r\nAssignment failed. Please try again.");
+          }
+        } else {
+          term.writeln("\r\nNo active assignment to submit.");
+        }
+        term.write("$ ");
       }
 
       function closeLab() {
@@ -354,23 +483,23 @@
         controls.lock();
       }
 
-      function submitCommand() {
-        const commandInput = document.getElementById("commandInput");
-        const command = commandInput.value.trim().toLowerCase();
-        const terminal = document.getElementById("terminal");
+      // function submitCommand() {
+      //   const commandInput = document.getElementById("commandInput");
+      //   const command = commandInput.value.trim().toLowerCase();
+      //   const terminal = document.getElementById("terminal");
 
-        terminal.innerHTML += `> ${command}<br>`;
+      //   terminal.innerHTML += `> ${command}<br>`;
 
-        const task = currentLab.tasks.find((t) => t.command === command);
-        if (task) {
-          terminal.innerHTML += `${task.response}<br>`;
-        } else {
-          terminal.innerHTML += "Unknown command. Try again.<br>";
-        }
+      //   const task = currentLab.tasks.find((t) => t.command === command);
+      //   if (task) {
+      //     terminal.innerHTML += `${task.response}<br>`;
+      //   } else {
+      //     terminal.innerHTML += "Unknown command. Try again.<br>";
+      //   }
 
-        commandInput.value = "";
-        terminal.scrollTop = terminal.scrollHeight;
-      }
+      //   commandInput.value = "";
+      //   terminal.scrollTop = terminal.scrollHeight;
+      // }
 
       function animate() {
         requestAnimationFrame(animate);
@@ -463,7 +592,6 @@
         renderer.render(scene, camera);
       }
 
-      window.submitCommand = submitCommand;
       window.closeLab = closeLab;
     </script>
   </body>
