@@ -1,0 +1,14 @@
+{
+  "name": "drone-view-learning-platform",
+  "version": "1.0.0",
+  "description": "3D drone view learning platform with integrated Python lab",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "dockerode": "^3.3.1",
+    "drone-view-learning-platform": "file:",
+    "ws": "^8.5.0"
+  }
+}

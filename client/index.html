@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>
-      Enhanced 3D Drone Website with Aerial Movement & Linux Terminal Lab
+      Enhanced 3D Drone Website with Aerial Movement & Integrated Python Lab
     </title>
     <link
       rel="stylesheet"
@@ -50,26 +50,45 @@
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
+        background: #2b2b2b;
+        color: #f0f0f0;
         padding: 20px;
         border-radius: 10px;
         display: none;
         z-index: 300;
-        width: 80%;
-        max-width: 600px;
+        width: 90%;
+        max-width: 1000px;
+        font-family: "Courier New", monospace;
       }
       #terminal {
-        background: black;
-        color: white;
-        font-family: monospace;
+        background: #000;
+        color: #33ff00;
+        font-family: "Courier New", monospace;
         padding: 10px;
         margin-top: 10px;
-        height: 200px;
+        height: 400px;
         overflow-y: auto;
         width: 100%;
-        height: 300px;
+        border: 1px solid #33ff00;
+        box-shadow: 0 0 10px rgba(51, 255, 0, 0.5);
+      }
+      #assignment-info {
+        margin-top: 20px;
+        color: #f0f0f0;
+        background: #1e1e1e;
+        padding: 15px;
+        border-radius: 5px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      #starter-code {
+        background: #1e1e1e;
+        color: #f0f0f0;
+        padding: 15px;
+        border-radius: 5px;
         margin-top: 10px;
+        white-space: pre-wrap;
+        font-family: "Courier New", monospace;
       }
       .lab-button {
         position: absolute;
@@ -82,9 +101,18 @@
         display: none;
         z-index: 150;
       }
-      #assignment-info {
-        margin-top: 20px;
-        color: white;
+      .ass-button {
+        background: #33ff00;
+        color: #000;
+        border: none;
+        padding: 10px 20px;
+        margin-top: 10px;
+        cursor: pointer;
+        font-family: "Courier New", monospace;
+        font-weight: bold;
+      }
+      .ass-button:hover {
+        background: #2bdb00;
       }
     </style>
   </head>
@@ -97,14 +125,16 @@
     <div id="tooltip"></div>
     <div id="labInterface">
       <h2 id="labTitle"></h2>
-      <p id="labDescription"></p>
-      <div id="terminal"></div>
       <div id="assignment-info">
-        <h3>Current Assignment: <span id="assignment-title"></span></h3>
-        <p id="assignment-description"></p>
+        <h3 id="assignment-title"></h3>
+        <div id="assignment-description"></div>
       </div>
-      <button onclick="submitAssignment()">Submit Assignment</button>
-      <button onclick="closeLab()">Close Lab</button>
+      <div id="starter-code"></div>
+      <div id="terminal"></div>
+      <button onclick="submitAssignment()" class="ass-button">
+        Submit Assignment
+      </button>
+      <button onclick="closeLab()" class="ass-button">Close Lab</button>
     </div>
     <button id="startLab" class="lab-button">Start Lab</button>
 
@@ -142,28 +172,11 @@
       let currentLine = "";
       let pointerReferenceList;
 
+      let socket;
+      let dockerContainerId;
+
       // Terminal and assignment-related variables
       let currentAssignment = null;
-      const assignments = [
-        {
-          title: "Hello World",
-          description:
-            "Write a Python program that prints 'Hello, World!' to the console.",
-          startCode: "# Write your code here\n\n",
-          solution: 'print("Hello, World!")',
-          test: (output) => output.trim() === "Hello, World!",
-        },
-        {
-          title: "Sum of Two Numbers",
-          description:
-            "Write a Python function that takes two numbers as input and returns their sum.",
-          startCode:
-            "def sum_two_numbers(a, b):\n    # Write your code here\n    pass\n\n# Test your function\nprint(sum_two_numbers(3, 4))",
-          solution:
-            "def sum_two_numbers(a, b):\n    return a + b\n\nprint(sum_two_numbers(3, 4))",
-          test: (output) => output.trim() === "7",
-        },
-      ];
 
       init();
       animate();
@@ -366,7 +379,7 @@
         // Ground
         const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
         const groundTexture = new THREE.TextureLoader().load(
-          "https://threejsfundamentals.org/threejs/resources/images/checker.png"
+          "https://threejsfundamentals.org/threejs/resources/images/wall.jpg"
         );
         groundTexture.wrapS = groundTexture.wrapT = THREE.RepeatWrapping;
         groundTexture.repeat.set(100, 100);
@@ -556,8 +569,8 @@
           const labInterface = document.getElementById("labInterface");
           labInterface.style.display = "block";
           document.getElementById("labTitle").textContent = currentLab.title;
-          document.getElementById("labDescription").textContent =
-            currentLab.description;
+          // document.getElementById("labDescription").textContent =
+          //   currentLab.description;
 
           controls.unlock();
 
@@ -566,9 +579,42 @@
           term.fit();
 
           term.clear();
-          term.writeln("Welcome to the Python Programming Lab");
-          term.writeln('Type "help" for a list of available commands');
-          term.writeln("");
+          term.writeln("Connecting to Python Lab environment...");
+
+          // Connect to WebSocket server
+          socket = new WebSocket("ws://localhost:3000");
+
+          socket.onopen = function () {
+            term.writeln(
+              "Connected to Python Lab. Initializing Docker container..."
+            );
+            socket.send(JSON.stringify({ type: "init" }));
+          };
+
+          socket.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            switch (data.type) {
+              case "init":
+                term.writeln(
+                  `Docker container initialized. Ready to start assignment.`
+                );
+                startNextAssignment();
+                break;
+              case "output":
+                term.write(data.content);
+                break;
+              case "assignmentStarted":
+                displayAssignment(data.description, data.starterCode);
+                break;
+              case "assignmentResult":
+                displayAssignmentResult(data.passed, data.output);
+                break;
+            }
+          };
+
+          socket.onclose = function () {
+            term.writeln("Disconnected from Python Lab.");
+          };
 
           term.onKey(({ key, domEvent }) => {
             const printable =
@@ -592,104 +638,150 @@
             }
           });
 
-          term.write("$ ");
-
-          startAssignment();
+          // startAssignment();
         }
       }
 
+      function startNextAssignment() {
+        currentAssignment = (currentAssignment || 0) + 1;
+        socket.send(
+          JSON.stringify({
+            type: "startAssignment",
+            assignmentId: `assignment${currentAssignment}`,
+          })
+        );
+      }
+
+      function displayAssignment(description, starterCode) {
+        document.getElementById("assignment-title").textContent =
+          "Current Assignment";
+        document.getElementById("assignment-description").textContent =
+          description; // Changed from innerHTML to textContent
+        document.getElementById("starter-code").textContent = starterCode;
+        term.clear();
+        term.writeln("\x1b[1;33mWelcome to the Python Lab Environment!\x1b[0m");
+        term.writeln(
+          "\x1b[1;36mYour assignment details are displayed above the terminal.\x1b[0m"
+        );
+        term.writeln(
+          "\x1b[1;36mTo begin, type 'nano assignment.py' to open the editor.\x1b[0m"
+        );
+        term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
+      }
+
+      function displayAssignmentResult(passed, output) {
+        term.writeln("\r\n" + output);
+        if (passed) {
+          term.writeln("Congratulations! You've completed the assignment.");
+          startNextAssignment();
+        } else {
+          term.writeln(
+            "The assignment didn't pass all tests. Please try again."
+          );
+        }
+        term.write("$ ");
+      }
+      let isInEditor = false;
+      let currentCode = "";
+
       function handleCommand(command) {
         command = command.trim();
-        switch (command.toLowerCase()) {
-          case "help":
-            term.writeln("Available commands:");
-            term.writeln("  help - Show this help message");
-            term.writeln("  clear - Clear the terminal");
-            term.writeln("  ls - List files in the current directory");
-            term.writeln("  cat [filename] - Display file contents");
-            term.writeln("  python [filename] - Run a Python script");
-            break;
-          case "clear":
+        if (command === "nano assignment.py") {
+          isInEditor = true;
+          currentCode = document.getElementById("starter-code").textContent;
+          term.clear();
+          term.writeln("\x1b[1;33m--- Nano Editor ---\x1b[0m");
+          term.writeln(currentCode);
+          term.writeln(
+            "\x1b[1;36mEdit your code here. Press Ctrl+X to save and exit.\x1b[0m"
+          );
+          term.write(">>> ");
+        } else if (isInEditor) {
+          if (command === "Ctrl+X") {
+            isInEditor = false;
             term.clear();
-            break;
-          case "ls":
-            term.writeln("assignment.py");
-            break;
-          case "cat assignment.py":
-            if (currentAssignment) {
-              term.writeln(currentAssignment.startCode);
-            } else {
-              term.writeln("No active assignment.");
-            }
-            break;
-          case "python assignment.py":
-            if (currentAssignment) {
-              // In a real implementation, this would be executed in a containerized backend
-              const output = eval(currentAssignment.solution);
-              term.writeln(output);
-            } else {
-              term.writeln("No active assignment.");
-            }
-            break;
-          default:
-            term.writeln(`Command not found: ${command}`);
+            term.writeln(
+              "\x1b[1;32mFile saved. You can now submit your assignment.\x1b[0m"
+            );
+            term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
+          } else {
+            currentCode += command + "\n";
+            term.write(">>> ");
+          }
+        } else if (command === "cat assignment.py") {
+          term.writeln(currentCode);
+          term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
+        } else if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({
+              type: "command",
+              containerId: dockerContainerId,
+              command: command,
+            })
+          );
+        } else {
+          term.writeln(
+            "\x1b[1;31mNot connected to Python Lab environment.\x1b[0m"
+          );
+          term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
         }
       }
 
       function startAssignment() {
-        currentAssignment =
-          assignments[Math.floor(Math.random() * assignments.length)];
-        document.getElementById("assignment-title").textContent =
-          currentAssignment.title;
-        document.getElementById("assignment-description").textContent =
-          currentAssignment.description;
-        term.writeln(`\r\nNew assignment started: ${currentAssignment.title}`);
-        term.writeln(
-          'Use "cat assignment.py" to view the assignment, and edit it using your preferred method.'
-        );
-        term.writeln('Run your code using "python assignment.py"');
-        term.write("$ ");
+        // currentAssignment =
+        //   assignments[Math.floor(Math.random() * assignments.length)];
+        // document.getElementById("assignment-title").textContent =
+        //   currentAssignment.title;
+        // document.getElementById("assignment-description").textContent =
+        //   currentAssignment.description;
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({
+              type: "startAssignment",
+              containerId: dockerContainerId,
+              assignment: currentAssignment,
+            })
+          );
+        } else {
+          term.writeln(
+            "Not connected to Python Lab environment. Unable to start assignment."
+          );
+        }
       }
 
       function submitAssignment() {
-        if (currentAssignment) {
-          // In a real implementation, this would be executed in a containerized backend
-          const output = eval(currentAssignment.solution);
-          const passed = currentAssignment.test(output);
-          if (passed) {
-            term.writeln("\r\nAssignment passed! Great job!");
-          } else {
-            term.writeln("\r\nAssignment failed. Please try again.");
-          }
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({
+              type: "submitAssignment",
+              containerId: dockerContainerId,
+              assignment: currentAssignment,
+              code: currentCode,
+            })
+          );
         } else {
-          term.writeln("\r\nNo active assignment to submit.");
+          term.writeln(
+            "\x1b[1;31mNot connected to Python Lab environment. Unable to submit assignment.\x1b[0m"
+          );
+          term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
         }
-        term.write("$ ");
       }
 
       function closeLab() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({
+              type: "close",
+              containerId: dockerContainerId,
+            })
+          );
+          socket.close();
+        }
         const labInterface = document.getElementById("labInterface");
         labInterface.style.display = "none";
         controls.lock();
       }
-
-      // function submitCommand() {
-      //   const commandInput = document.getElementById("commandInput");
-      //   const command = commandInput.value.trim().toLowerCase();
-      //   const terminal = document.getElementById("terminal");
-
-      //   terminal.innerHTML += `> ${command}<br>`;
-
-      //   const task = currentLab.tasks.find((t) => t.command === command);
-      //   if (task) {
-      //     terminal.innerHTML += `${task.response}<br>`;
-      //   } else {
-      //     terminal.innerHTML += "Unknown command. Try again.<br>";
-      //   }
-
-      //   commandInput.value = "";
-      //   terminal.scrollTop = terminal.scrollHeight;
-      // }
 
       function animate() {
         requestAnimationFrame(animate);
