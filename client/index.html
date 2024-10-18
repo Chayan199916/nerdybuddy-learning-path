@@ -50,15 +50,22 @@
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        background: #2b2b2b;
+        background: rgba(43, 43, 43, 0.9);
         color: #f0f0f0;
         padding: 20px;
         border-radius: 10px;
-        display: none;
         z-index: 300;
         width: 90%;
         max-width: 1000px;
+        max-height: 80vh;
+        overflow-y: auto;
         font-family: "Courier New", monospace;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      }
+      #labTitle {
+        margin-top: 0;
+        color: #33ff00;
+        text-align: center;
       }
       #terminal {
         background: #000;
@@ -74,20 +81,51 @@
       }
       #assignment-info {
         margin-top: 20px;
-        color: #f0f0f0;
-        background: #1e1e1e;
         padding: 15px;
+        background: rgba(30, 30, 30, 0.7);
         border-radius: 5px;
-        max-height: 200px;
-        overflow-y: auto;
+      }
+      #assignment-title {
+        color: #33ff00;
+        margin-top: 0;
+      }
+
+      #assignment-description {
+        margin-top: 10px;
+        line-height: 1.5;
+      }
+
+      #split-container {
+        display: flex;
+        height: calc(80vh - 200px);
+        margin-top: 20px;
+        border: 1px solid #444;
+      }
+
+      #terminal-area,
+      #editor-area {
+        flex: 1;
+        overflow: auto;
+      }
+
+      #editor-area {
+        display: none;
+        background-color: #2b2b2b;
       }
       #starter-code {
-        background: #1e1e1e;
-        color: #f0f0f0;
-        padding: 15px;
-        border-radius: 5px;
-        margin-top: 10px;
-        white-space: pre-wrap;
+        padding: 10px;
+        background-color: #2b2b2b;
+        color: #a9b7c6;
+        font-family: "Courier New", monospace;
+      }
+      #code-editor {
+        width: 100%;
+        height: calc(100% - 100px);
+        background-color: #2b2b2b;
+        color: #a9b7c6;
+        border: none;
+        resize: none;
+        padding: 10px;
         font-family: "Courier New", monospace;
       }
       .lab-button {
@@ -123,18 +161,13 @@
     </div>
     <div id="pointerList"></div>
     <div id="tooltip"></div>
-    <div id="labInterface">
+    <div id="labInterface" style="display: none">
       <h2 id="labTitle"></h2>
       <div id="assignment-info">
         <h3 id="assignment-title"></h3>
         <div id="assignment-description"></div>
       </div>
-      <div id="starter-code"></div>
-      <div id="terminal"></div>
-      <button onclick="submitAssignment()" class="ass-button">
-        Submit Assignment
-      </button>
-      <button onclick="closeLab()" class="ass-button">Close Lab</button>
+      <!-- The split-container and its contents will be added dynamically -->
     </div>
     <button id="startLab" class="lab-button">Start Lab</button>
 
@@ -564,6 +597,87 @@
         tooltip.style.display = "none";
       }
 
+      let editorContent = "";
+      let isEditorActive = false;
+
+      function initializeSplitInterface() {
+        const labInterface = document.getElementById("labInterface");
+        labInterface.insertAdjacentHTML(
+          "beforeend",
+          `
+<div id="split-container" style="display: flex; height: 100%;">
+    <div id="terminal-area" style="flex: 1; overflow: auto;"></div>
+    <div id="editor-area" style="flex: 1; display: none; overflow: auto;">
+        <div id="starter-code" style="padding: 10px; background-color: #2b2b2b; color: #a9b7c6;"></div>
+        <textarea id="code-editor" style="width: 100%; height: calc(100% - 100px); background-color: #2b2b2b; color: #a9b7c6; border: none; resize: none; padding: 10px; font-family: 'Courier New', monospace;"></textarea>
+    </div>
+</div>
+<button id="submit-assignment" class="ass-button">Submit Assignment</button>
+<button id="close-lab" class="ass-button">Close Lab</button>
+`
+        );
+        // Add event listeners for the buttons
+        document
+          .getElementById("submit-assignment")
+          .addEventListener("click", submitAssignment);
+        document
+          .getElementById("close-lab")
+          .addEventListener("click", closeLab);
+      }
+
+      function handleTerminalCommand(command) {
+        if (command === "nano assignment.py") {
+          openEditor();
+        } else if (command === "cat assignment.py") {
+          term.writeln(editorContent || "File is empty.");
+        } else {
+          term.writeln(`Command not recognized: ${command}`);
+        }
+      }
+
+      function openEditor() {
+        isEditorActive = true;
+        document.getElementById("editor-area").style.display = "block";
+        document.getElementById("starter-code").innerHTML =
+          document.getElementById("starter-code").textContent;
+        const codeEditor = document.getElementById("code-editor");
+        codeEditor.value = editorContent;
+        codeEditor.focus();
+
+        // Set up event listener for Ctrl+X to save and exit
+        codeEditor.addEventListener("keydown", function (e) {
+          if (e.ctrlKey && e.key === "x") {
+            e.preventDefault();
+            saveAndExitEditor();
+          }
+        });
+      }
+
+      function saveAndExitEditor() {
+        editorContent = document.getElementById("code-editor").value;
+        isEditorActive = false;
+        document.getElementById("editor-area").style.display = "none";
+        term.writeln("File saved. You can now submit your assignment.");
+        term.write("user@pythonlab:~$ ");
+      }
+
+      function submitAssignment() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            JSON.stringify({
+              type: "submitAssignment",
+              containerId: dockerContainerId,
+              assignment: currentAssignment,
+              code: editorContent,
+            })
+          );
+        } else {
+          term.writeln(
+            "Not connected to Python Lab environment. Unable to submit assignment."
+          );
+        }
+      }
+
       function startLabExperiment() {
         if (currentLab) {
           const labInterface = document.getElementById("labInterface");
@@ -572,9 +686,11 @@
           // document.getElementById("labDescription").textContent =
           //   currentLab.description;
 
+          initializeSplitInterface();
+
           controls.unlock();
 
-          term.open(document.getElementById("terminal"));
+          term.open(document.getElementById("terminal-area"));
           Terminal.applyAddon(fit);
           term.fit();
 
@@ -623,17 +739,17 @@
             if (domEvent.keyCode === 13) {
               // Enter
               term.write("\r\n");
-              handleCommand(currentLine);
-              currentLine = "";
-              term.write("$ ");
+              handleTerminalCommand(commandBuffer);
+              commandBuffer = "";
+              term.write("user@pythonlab:~$ ");
             } else if (domEvent.keyCode === 8) {
               // Backspace
-              if (currentLine.length > 0) {
-                currentLine = currentLine.slice(0, -1);
+              if (commandBuffer.length > 0) {
+                commandBuffer = commandBuffer.slice(0, -1);
                 term.write("\b \b");
               }
             } else if (printable) {
-              currentLine += key;
+              commandBuffer += key;
               term.write(key);
             }
           });
@@ -656,17 +772,17 @@
         document.getElementById("assignment-title").textContent =
           "Current Assignment";
         document.getElementById("assignment-description").textContent =
-          description; // Changed from innerHTML to textContent
+          description;
         document.getElementById("starter-code").textContent = starterCode;
         term.clear();
         term.writeln("\x1b[1;33mWelcome to the Python Lab Environment!\x1b[0m");
         term.writeln(
-          "\x1b[1;36mYour assignment details are displayed above the terminal.\x1b[0m"
+          "\x1b[1;36mYour assignment details are displayed above.\x1b[0m"
         );
         term.writeln(
           "\x1b[1;36mTo begin, type 'nano assignment.py' to open the editor.\x1b[0m"
         );
-        term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
+        term.write("user@pythonlab:~$ ");
       }
 
       function displayAssignmentResult(passed, output) {
@@ -679,52 +795,104 @@
             "The assignment didn't pass all tests. Please try again."
           );
         }
-        term.write("$ ");
+        term.write("user@pythonlab:~$ ");
       }
       let isInEditor = false;
       let currentCode = "";
+      let cursorPosition = 0;
+      let commandBuffer = "";
 
-      function handleCommand(command) {
-        command = command.trim();
-        if (command === "nano assignment.py") {
-          isInEditor = true;
-          currentCode = document.getElementById("starter-code").textContent;
-          term.clear();
-          term.writeln("\x1b[1;33m--- Nano Editor ---\x1b[0m");
-          term.writeln(currentCode);
-          term.writeln(
-            "\x1b[1;36mEdit your code here. Press Ctrl+X to save and exit.\x1b[0m"
-          );
-          term.write(">>> ");
-        } else if (isInEditor) {
-          if (command === "Ctrl+X") {
-            isInEditor = false;
-            term.clear();
-            term.writeln(
-              "\x1b[1;32mFile saved. You can now submit your assignment.\x1b[0m"
-            );
-            term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
-          } else {
-            currentCode += command + "\n";
-            term.write(">>> ");
-          }
-        } else if (command === "cat assignment.py") {
-          term.writeln(currentCode);
-          term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
-        } else if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(
-            JSON.stringify({
-              type: "command",
-              containerId: dockerContainerId,
-              command: command,
-            })
-          );
-        } else {
-          term.writeln(
-            "\x1b[1;31mNot connected to Python Lab environment.\x1b[0m"
-          );
-          term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
-        }
+      // function handleCommand(command) {
+      //   if (!isInEditor) {
+      //     command = command.trim();
+      //   }
+
+      //   if (command === "nano assignment.py") {
+      //     isInEditor = true;
+      //     currentCode = document
+      //       .getElementById("starter-code")
+      //       .textContent.trim();
+      //     cursorPosition = currentCode.length;
+      //     displayEditor();
+      //   } else if (isInEditor) {
+      //     if (command === "Ctrl+X") {
+      //       isInEditor = false;
+      //       term.clear();
+      //       term.writeln(
+      //         "\x1b[1;32mFile saved. You can now submit your assignment.\x1b[0m"
+      //       );
+      //       term.write("user@pythonlab:~$ ");
+      //     } else if (command === "Backspace") {
+      //       if (cursorPosition > 0) {
+      //         currentCode =
+      //           currentCode.slice(0, cursorPosition - 1) +
+      //           currentCode.slice(cursorPosition);
+      //         cursorPosition--;
+      //         displayEditor();
+      //       }
+      //     } else if (command === "ArrowLeft") {
+      //       if (cursorPosition > 0) cursorPosition--;
+      //       displayEditor();
+      //     } else if (command === "ArrowRight") {
+      //       if (cursorPosition < currentCode.length) cursorPosition++;
+      //       displayEditor();
+      //     } else if (command === "Enter") {
+      //       const lines = currentCode.split("\n");
+      //       const currentLine = lines[lines.length - 1];
+      //       const indentation = currentLine.match(/^\s*/)[0];
+      //       currentCode =
+      //         currentCode.slice(0, cursorPosition) +
+      //         "\n" +
+      //         indentation +
+      //         currentCode.slice(cursorPosition);
+      //       cursorPosition += indentation.length + 1;
+      //       displayEditor();
+      //     } else {
+      //       currentCode =
+      //         currentCode.slice(0, cursorPosition) +
+      //         command +
+      //         currentCode.slice(cursorPosition);
+      //       cursorPosition += command.length;
+      //       displayEditor();
+      //     }
+      //   } else if (command === "cat assignment.py") {
+      //     term.writeln(currentCode);
+      //     term.write("user@pythonlab:~$ ");
+      //   } else if (socket && socket.readyState === WebSocket.OPEN) {
+      //     socket.send(
+      //       JSON.stringify({
+      //         type: "command",
+      //         containerId: dockerContainerId,
+      //         command: command,
+      //       })
+      //     );
+      //   } else {
+      //     term.writeln(
+      //       "\x1b[1;31mNot connected to Python Lab environment.\x1b[0m"
+      //     );
+      //     term.write("user@pythonlab:~$ ");
+      //   }
+      // }
+
+      function displayEditor() {
+        term.clear();
+        term.writeln("\x1b[1;33m--- Nano Editor ---\x1b[0m");
+        const lines = currentCode.split("\n");
+        lines.forEach((line, index) => {
+          if (index === lines.length - 1 && line === "") return; // Don't print last empty line
+          term.writeln(line);
+        });
+        term.writeln(
+          "\x1b[1;36mEdit your code here. Press Ctrl+X to save and exit.\x1b[0m"
+        );
+        // Position the cursor
+        const cursorLine =
+          currentCode.substr(0, cursorPosition).split("\n").length - 1;
+        const cursorCol =
+          cursorPosition -
+          currentCode.substr(0, cursorPosition).lastIndexOf("\n") -
+          1;
+        term.write(`\x1b[${cursorLine + 1};${cursorCol + 1}H`);
       }
 
       function startAssignment() {
@@ -747,24 +915,6 @@
           term.writeln(
             "Not connected to Python Lab environment. Unable to start assignment."
           );
-        }
-      }
-
-      function submitAssignment() {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(
-            JSON.stringify({
-              type: "submitAssignment",
-              containerId: dockerContainerId,
-              assignment: currentAssignment,
-              code: currentCode,
-            })
-          );
-        } else {
-          term.writeln(
-            "\x1b[1;31mNot connected to Python Lab environment. Unable to submit assignment.\x1b[0m"
-          );
-          term.write("\x1b[1;32muser@pythonlab:~$\x1b[0m ");
         }
       }
 
@@ -889,8 +1039,6 @@
 
         renderer.render(scene, camera);
       }
-
-      window.closeLab = closeLab;
     </script>
   </body>
 </html>
